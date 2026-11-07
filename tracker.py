@@ -9,7 +9,7 @@ ADMIN_ID = 9158877731
 GROUP_ID = -1003935415154
 PROFIT_TOPIC_ID = 3 
 
-# Ссылки для кнопок
+# Ссылки
 OFFER_BOT_USERNAME = "FakeOffer122323Bot"  # Юзернейм твоего оффер-бота
 TEAM_LINK = "https://t.me/+JLRzlfSdkM0wYWYx"  # Ссылка на твой Тим
 
@@ -31,11 +31,12 @@ def save():
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     
+    # Обычные текстовые кнопки (без url)
     btn_profile = types.KeyboardButton("👤 Профиль")
     btn_profits = types.KeyboardButton("💰 Мои профиты")
     btn_wallet = types.KeyboardButton("👛 Кошелёк")
-    btn_bots = types.KeyboardButton("🤖 Наши боты", url=f"https://t.me/{OFFER_BOT_USERNAME}")
-    btn_team = types.KeyboardButton("👥 Тим", url=TEAM_LINK)
+    btn_bots = types.KeyboardButton("🤖 Наши боты")
+    btn_team = types.KeyboardButton("👥 Тим")
     
     markup.add(btn_profile, btn_profits)
     markup.add(btn_wallet, btn_bots)
@@ -46,14 +47,11 @@ def main_menu():
 @bot.message_handler(commands=["start"])
 def start(m):
     uid = str(m.from_user.id)
-    
-    # Сохраняем данные воркера
     db["names"][uid] = {
         "username": m.from_user.username or "нет_юзернейма",
         "first_name": m.from_user.first_name or "Воркер"
     }
     save()
-
     bot.send_message(m.chat.id, "Выбери действие:", reply_markup=main_menu())
 
 # --- ОБРАБОТКА КНОПОК МЕНЮ ---
@@ -74,7 +72,6 @@ def show_profile(m):
 @bot.message_handler(func=lambda message: message.text == "💰 Мои профиты")
 def show_profits(m):
     uid = str(m.from_user.id)
-    # Считаем выплаты
     my_pays = [p for p in db["paid"] if str(p["uid"]) == uid]
     total = sum(p["sum"] for p in my_pays)
     
@@ -90,7 +87,7 @@ def ask_wallet(m):
 
 def save_wallet(m):
     if m.text in ["👤 Профиль", "💰 Мои профиты", "👛 Кошелёк", "🤖 Наши боты", "👥 Тим"]:
-        return # Если нажали другую кнопку, отменяем
+        return 
         
     w = m.text.strip() if m.text else ""
     if not w:
@@ -100,7 +97,22 @@ def save_wallet(m):
     save()
     bot.send_message(m.chat.id, f"✅ Кошелёк сохранён:\n<code>{w}</code>", parse_mode="HTML", reply_markup=main_menu())
 
-# --- ПРИЕМ ПРОФИТА ОТ ОФФЕР-БОТА (Без изменений) ---
+# --- ОБРАБОТКА ССЫЛОК (Наши боты и Тим) ---
+@bot.message_handler(func=lambda message: message.text == "🤖 Наши боты")
+def show_bots_link(m):
+    # Отправляем Inline-кнопку со ссылкой
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🚀 Перейти в Оффер-бот", url=f"https://t.me/{OFFER_BOT_USERNAME}"))
+    bot.send_message(m.chat.id, "Нажми на кнопку ниже, чтобы перейти:", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == "👥 Тим")
+def show_team_link(m):
+    # Отправляем Inline-кнопку со ссылкой
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("💬 Перейти в Тим", url=TEAM_LINK))
+    bot.send_message(m.chat.id, "Нажми на кнопку ниже, чтобы перейти:", reply_markup=markup)
+
+# --- ПРИЕМ ПРОФИТА ОТ ОФФЕР-БОТА ---
 @bot.message_handler(commands=["add_profit"])
 def add_profit(m):
     if m.from_user.id != OFFER_BOT_ID:
@@ -146,7 +158,7 @@ def add_profit(m):
     except Exception as e:
         print(f"Ошибка отправки в группу: {e}")
 
-# --- ОПЛАТА (Без изменений) ---
+# --- ОПЛАТА ---
 @bot.callback_query_handler(func=lambda c: c.data.startswith("pay:"))
 def pay(c):
     if c.from_user.id != ADMIN_ID:
