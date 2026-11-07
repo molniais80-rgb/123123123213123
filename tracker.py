@@ -3,66 +3,106 @@ from telebot import types
 import json, os
 from datetime import datetime
 
-# --- НАСТРОЙКИ ТРЕКЕР-БОТА ---
+# --- НАСТРОЙКИ ---
 TOKEN = "8914754146:AAH3WF5wVgNtvfXpomuVCY1KoZ9VrBcGPcw"
-ADMIN_ID = 9158877731  # Твой ID (кто может нажимать «Оплатить»)
-GROUP_ID = -1003935415154  # ID группы, куда летят профиты
-PROFIT_TOPIC_ID = 3  # ID ТОПИКА (вкладки) в группе
+ADMIN_ID = 9158877731
+GROUP_ID = -1003935415154
+PROFIT_TOPIC_ID = 3 
 
-WORKER_PERCENT = 80      # Процент воркера
-STAR_TO_USD = 0.02       # Курс звезды в долларах
+# Ссылки для кнопок
+OFFER_BOT_USERNAME = "FakeOffer122323Bot"  # Юзернейм твоего оффер-бота
+TEAM_LINK = "https://t.me/+JLRzlfSdkM0wYWYx"  # Ссылка на твой Тим
 
-# ID твоего Оффер-бота (aiogram), чтобы Трекер слушал только его
-OFFER_BOT_ID = 9056825852  # ЗАМЕНИ НА ID ОФФЕР-БОТА
+WORKER_PERCENT = 80
+STAR_TO_USD = 0.02
+OFFER_BOT_ID = 9056825852  # ID Оффер-бота
 
 DB = "team.json"
-
-# Создаем базу, если ее нет
 if not os.path.exists(DB):
     json.dump({"wallets": {}, "names": {}, "paid": []}, open(DB, "w", encoding="utf-8"))
-
 db = json.load(open(DB, encoding="utf-8"))
+
 bot = telebot.TeleBot(TOKEN)
 
 def save():
     json.dump(db, open(DB, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
-# --- /start: Сохранение кошелька и данных воркера ---
+# --- КЛАВИАТУРА ГЛАВНОГО МЕНЮ ---
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    
+    btn_profile = types.KeyboardButton("👤 Профиль")
+    btn_profits = types.KeyboardButton("💰 Мои профиты")
+    btn_wallet = types.KeyboardButton("👛 Кошелёк")
+    btn_bots = types.KeyboardButton("🤖 Наши боты", url=f"https://t.me/{OFFER_BOT_USERNAME}")
+    btn_team = types.KeyboardButton("👥 Тим", url=TEAM_LINK)
+    
+    markup.add(btn_profile, btn_profits)
+    markup.add(btn_wallet, btn_bots)
+    markup.add(btn_team)
+    return markup
+
+# --- /start ---
 @bot.message_handler(commands=["start"])
 def start(m):
     uid = str(m.from_user.id)
     
-    # Сохраняем имя и юзернейм воркера для дальнейших отчетов
+    # Сохраняем данные воркера
     db["names"][uid] = {
         "username": m.from_user.username or "нет_юзернейма",
         "first_name": m.from_user.first_name or "Воркер"
     }
     save()
 
-    if uid in db["wallets"]:
-        bot.send_message(
-            m.chat.id, 
-            f"👛 Твой кошелёк уже сохранён:\n{db['wallets'][uid]}\n\nОтправь новый, чтобы заменить:"
-        )
-        msg = bot.send_message(m.chat.id, "...")
-        bot.register_next_step_handler(msg, lambda mm: save_wallet(mm, True))
-    else:
-        msg = bot.send_message(m.chat.id, "Отправь свой TON-кошелёк для выплат:")
-        bot.register_next_step_handler(msg, save_wallet)
+    bot.send_message(m.chat.id, "Выбери действие:", reply_markup=main_menu())
 
-def save_wallet(m, replace=False):
+# --- ОБРАБОТКА КНОПОК МЕНЮ ---
+@bot.message_handler(func=lambda message: message.text == "👤 Профиль")
+def show_profile(m):
+    uid = str(m.from_user.id)
+    wallet = db["wallets"].get(uid, "не указан")
+    name = m.from_user.first_name
+    username = f"@{m.from_user.username}" if m.from_user.username else "нет"
+    
+    text = (f"👤 <b>Твой профиль</b>\n\n"
+            f"Имя: {name}\n"
+            f"Юзернейм: {username}\n"
+            f"ID: <code>{uid}</code>\n"
+            f"Кошелёк: <code>{wallet}</code>")
+    bot.send_message(m.chat.id, text, parse_mode="HTML")
+
+@bot.message_handler(func=lambda message: message.text == "💰 Мои профиты")
+def show_profits(m):
+    uid = str(m.from_user.id)
+    # Считаем выплаты
+    my_pays = [p for p in db["paid"] if str(p["uid"]) == uid]
+    total = sum(p["sum"] for p in my_pays)
+    
+    text = (f"💰 <b>Твои профиты</b>\n\n"
+            f"Всего профитов: {len(my_pays)}\n"
+            f"Заработано: <b>{round(total, 2)}$</b>")
+    bot.send_message(m.chat.id, text, parse_mode="HTML")
+
+@bot.message_handler(func=lambda message: message.text == "👛 Кошелёк")
+def ask_wallet(m):
+    bot.send_message(m.chat.id, "Отправь свой TON-кошелёк для выплат:")
+    bot.register_next_step_handler(m, save_wallet)
+
+def save_wallet(m):
+    if m.text in ["👤 Профиль", "💰 Мои профиты", "👛 Кошелёк", "🤖 Наши боты", "👥 Тим"]:
+        return # Если нажали другую кнопку, отменяем
+        
     w = m.text.strip() if m.text else ""
-    if not w or w.startswith("/"):
-        bot.send_message(m.chat.id, "Это не похоже на кошелёк, отправь ещё раз /start")
+    if not w:
+        bot.send_message(m.chat.id, "Это не похоже на кошелёк, попробуй снова /start")
         return
     db["wallets"][str(m.from_user.id)] = w
     save()
-    bot.send_message(m.chat.id, f"✅ Кошелёк сохранён:\n{w}")
+    bot.send_message(m.chat.id, f"✅ Кошелёк сохранён:\n<code>{w}</code>", parse_mode="HTML", reply_markup=main_menu())
 
-# --- ПРИЕМ ПРОФИТА ОТ ОФФЕР-БОТА ---
+# --- ПРИЕМ ПРОФИТА ОТ ОФФЕР-БОТА (Без изменений) ---
 @bot.message_handler(commands=["add_profit"])
 def add_profit(m):
-    # Проверяем, что команду прислал именно Оффер-бот
     if m.from_user.id != OFFER_BOT_ID:
         return
         
@@ -79,18 +119,15 @@ def add_profit(m):
     base_name = args[3]
     gift_id = args[4]
     
-    # Формируем ссылку на NFT
     link = f"https://t.me/nft/{base_name}-{gift_id}"
     usd = round(stars * STAR_TO_USD, 2)
     pay = round(usd * WORKER_PERCENT / 100, 2)
     
-    # Получаем данные воркера из базы
     worker_info = db["names"].get(worker_id, {})
     worker_name = worker_info.get("first_name", "Неизвестный")
     worker_username = worker_info.get("username", "нет_юзернейма")
-    wallet = db["wallets"].get(worker_id, "не указан (пусть напишет /start)")
+    wallet = db["wallets"].get(worker_id, "не указан")
     
-    # Формируем красивый отчет
     text = (
         f"📈 <b>НОВЫЙ ПРОФИТ</b>\n\n"
         f"👤 Воркер: <a href='tg://user?id={worker_id}'>{worker_name}</a> (@{worker_username})\n"
@@ -104,19 +141,12 @@ def add_profit(m):
     kb = types.InlineKeyboardMarkup()
     kb.row(types.InlineKeyboardButton("💸 Оплатить", callback_data=f"pay:{worker_id}:{pay}"))
     
-    # Отправляем в указанный топик группы
     try:
-        bot.send_message(
-            GROUP_ID, 
-            text, 
-            parse_mode="HTML", 
-            reply_markup=kb, 
-            message_thread_id=PROFIT_TOPIC_ID
-        )
+        bot.send_message(GROUP_ID, text, parse_mode="HTML", reply_markup=kb, message_thread_id=PROFIT_TOPIC_ID)
     except Exception as e:
         print(f"Ошибка отправки в группу: {e}")
 
-# --- КНОПКА «ОПЛАТИТЬ» ---
+# --- ОПЛАТА (Без изменений) ---
 @bot.callback_query_handler(func=lambda c: c.data.startswith("pay:"))
 def pay(c):
     if c.from_user.id != ADMIN_ID:
@@ -124,29 +154,17 @@ def pay(c):
         return
         
     _, uid, amount = c.data.split(":")
-    
-    # Записываем выплату в базу
-    db["paid"].append({
-        "uid": uid, 
-        "sum": float(amount),
-        "date": datetime.now().strftime("%d.%m %H:%M")
-    })
+    db["paid"].append({"uid": uid, "sum": float(amount), "date": datetime.now().strftime("%d.%m %H:%M")})
     save()
     
-    # Меняем текст сообщения, добавляя плашку ОПЛАЧЕНО
     new_text = c.message.text + "\n\n✅ <b>ОПЛАЧЕНО</b>"
     try:
-        bot.edit_message_text(
-            new_text,
-            GROUP_ID, 
-            c.message.message_id, 
-            parse_mode="HTML"
-        )
+        bot.edit_message_text(new_text, GROUP_ID, c.message.message_id, parse_mode="HTML")
     except Exception:
-        pass # Если текст не изменился, игнорируем ошибку
+        pass
     bot.answer_callback_query(c.id, "Отмечено как оплачено")
 
 # --- Запуск ---
 if __name__ == "__main__":
-    print("Трекер-бот запущен и ожидает данные от Оффер-бота...")
+    print("Трекер-бот запущен...")
     bot.infinity_polling()
